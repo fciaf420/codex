@@ -4,6 +4,7 @@ import { PairRoute } from "./routes/pair";
 import { SessionsRoute } from "./routes/sessions";
 import { SessionRoute } from "./routes/session";
 import { NewRoute } from "./routes/new";
+import { ShareRoute } from "./routes/share";
 
 export function App() {
   return (
@@ -14,6 +15,7 @@ export function App() {
         <Route path="/sessions" element={<SessionsRoute />} />
         <Route path="/sessions/:id" element={<SessionRoute />} />
         <Route path="/new" element={<NewRoute />} />
+        <Route path="/share" element={<ShareRoute />} />
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
     </BrowserRouter>
