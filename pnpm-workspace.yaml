@@ -2,6 +2,9 @@ packages:
   - codex-cli
   - codex-rs/responses-api-proxy/npm
   - sdk/typescript
+  - mobile/bridge
+  - mobile/web
+  - mobile/shared
 
 ignoredBuiltDependencies:
   - esbuild
