@@ -117,3 +117,23 @@ argument-comment-lint-from-source *args:
 # Tail logs from the state SQLite database
 log *args:
     if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-state --bin logs_client -- "$@"
+
+# --- mobile (web PWA + Node bridge) ----------------------------------------
+
+# Build everything (shared types, web PWA, Node bridge).
+[no-cd]
+mobile-build:
+    pnpm --filter @codex/mobile-shared sync-types
+    pnpm --filter @codex/mobile-shared build
+    pnpm --filter @codex/mobile-web build
+    pnpm --filter @codex/mobile-bridge build
+
+# Run the bridge with hot-reload (assumes web has been built once).
+[no-cd]
+mobile-dev:
+    pnpm --filter @codex/mobile-bridge dev
+
+# Run the production bridge: serves the built PWA + JSON-RPC proxy.
+[no-cd]
+mobile-bridge:
+    node {{ justfile_directory() }}/mobile/bridge/dist/index.js

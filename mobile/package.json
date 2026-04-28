@@ -1,0 +1,12 @@
+{
+  "name": "@codex/mobile-root",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mobile-optimized web client + Node bridge for accessing Codex CLI sessions from a phone.",
+  "scripts": {
+    "build": "pnpm --filter @codex/mobile-shared build && pnpm --filter @codex/mobile-web build && pnpm --filter @codex/mobile-bridge build",
+    "dev:web": "pnpm --filter @codex/mobile-web dev",
+    "dev:bridge": "pnpm --filter @codex/mobile-bridge dev",
+    "start": "node mobile/bridge/dist/index.js"
+  }
+}
