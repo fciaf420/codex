@@ -49,6 +49,7 @@ use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
+use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverable;
@@ -132,7 +133,6 @@ mod network_proxy_spec;
 mod permissions;
 #[cfg(test)]
 mod schema;
-pub(crate) mod template_interpolation;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;
 pub use codex_config::ConstraintResult;
@@ -546,6 +546,9 @@ pub struct Config {
 
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
+
+    /// Preferred layout for resume/fork session picker results.
+    pub tui_session_picker_view: SessionPickerViewMode,
 
     /// Terminal resize-reflow tuning knobs.
     pub terminal_resize_reflow: TerminalResizeReflowConfig,
@@ -1126,6 +1129,62 @@ impl Config {
         }
     }
 
+    pub async fn rebuild_preserving_session_layers(
+        &self,
+        refreshed_config: &Config,
+    ) -> std::io::Result<Self> {
+        let mut layers = refreshed_config
+            .config_layer_stack
+            .get_layers(
+                ConfigLayerStackOrdering::LowestPrecedenceFirst,
+                /*include_disabled*/ true,
+            )
+            .into_iter()
+            .filter(|layer| !is_session_layer(&layer.name))
+            .cloned()
+            .collect::<Vec<_>>();
+        layers.extend(
+            self.config_layer_stack
+                .get_layers(
+                    ConfigLayerStackOrdering::LowestPrecedenceFirst,
+                    /*include_disabled*/ true,
+                )
+                .into_iter()
+                .filter(|layer| is_session_layer(&layer.name))
+                .cloned(),
+        );
+        layers.sort_by_key(|layer| layer.name.precedence());
+
+        let config_layer_stack = ConfigLayerStack::new(
+            layers,
+            refreshed_config.config_layer_stack.requirements().clone(),
+            refreshed_config
+                .config_layer_stack
+                .requirements_toml()
+                .clone(),
+        )?
+        .with_user_and_project_exec_policy_rules_ignored(
+            refreshed_config
+                .config_layer_stack
+                .ignore_user_and_project_exec_policy_rules(),
+        );
+        let cfg: ConfigToml = config_layer_stack
+            .effective_config()
+            .try_into()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        Self::load_config_with_layer_stack(
+            LOCAL_FS.as_ref(),
+            cfg,
+            ConfigOverrides {
+                cwd: Some(self.cwd.to_path_buf()),
+                ..Default::default()
+            },
+            refreshed_config.codex_home.clone(),
+            config_layer_stack,
+        )
+        .await
+    }
+
     /// This is the preferred way to create an instance of [Config].
     pub async fn load_with_cli_overrides(
         cli_overrides: Vec<(String, TomlValue)>,
@@ -1676,6 +1735,10 @@ fn thread_store_config(
     }
 }
 
+fn is_session_layer(source: &ConfigLayerSource) -> bool {
+    matches!(source, ConfigLayerSource::SessionFlags)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PermissionConfigSyntax {
     Legacy,
@@ -2014,63 +2077,6 @@ impl Config {
     }
 
     pub(crate) async fn load_config_with_layer_stack(
-        fs: &dyn ExecutorFileSystem,
-        cfg: ConfigToml,
-        overrides: ConfigOverrides,
-        codex_home: AbsolutePathBuf,
-        config_layer_stack: ConfigLayerStack,
-    ) -> std::io::Result<Self> {
-        let config = Self::build_config_with_layer_stack(
-            fs,
-            cfg.clone(),
-            overrides.clone(),
-            codex_home.clone(),
-            config_layer_stack.clone(),
-        )
-        .await?;
-        let mut interpolation_source_cfg = cfg.clone();
-        template_interpolation::apply_resolved_config_fields(
-            &config,
-            &mut interpolation_source_cfg,
-        )
-        .map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to materialize config for interpolation: {err}"),
-            )
-        })?;
-        let interpolation_source =
-            toml::Value::try_from(interpolation_source_cfg).map_err(|err| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("failed to serialize config for interpolation: {err}"),
-                )
-            })?;
-        let mut interpolated_cfg = cfg;
-        let interpolated = template_interpolation::interpolate_config_string_fields(
-            &mut interpolated_cfg,
-            &interpolation_source,
-        )
-        .map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to interpolate config template fields: {err}"),
-            )
-        })?;
-        if interpolated {
-            return Self::build_config_with_layer_stack(
-                fs,
-                interpolated_cfg,
-                overrides,
-                codex_home,
-                config_layer_stack,
-            )
-            .await;
-        }
-        Ok(config)
-    }
-
-    async fn build_config_with_layer_stack(
         fs: &dyn ExecutorFileSystem,
         cfg: ConfigToml,
         overrides: ConfigOverrides,
@@ -3168,6 +3174,12 @@ impl Config {
                 .unwrap_or(true),
             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
+            tui_session_picker_view: config_profile
+                .tui
+                .as_ref()
+                .and_then(|t| t.session_picker_view)
+                .or_else(|| cfg.tui.as_ref().and_then(|t| t.session_picker_view))
+                .unwrap_or_default(),
             terminal_resize_reflow,
             tui_keymap: cfg
                 .tui
