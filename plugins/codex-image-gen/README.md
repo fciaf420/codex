@@ -29,12 +29,11 @@ Examples:
 
 ## Requirements
 
-- `python3` available on PATH
-- `openai` Python package installed (`uv pip install openai` or `pip install openai`)
-- `OPENAI_API_KEY` exported in your environment
+- The Codex CLI installed and on `PATH` (`npm install -g @openai/codex`).
+- You logged into Codex (`codex login`). The plugin uses your existing Codex auth — **no `OPENAI_API_KEY` needed**, no API billing.
 
 ## How it works
 
-The slash command body inlines the OpenAI Cookbook *GPT Image Generation Models Prompting Guide* via an `@` include. Claude Code resolves the include at invocation time, so the full guide lands in the model's context every time. Claude then refines the user's request to follow the guide's structure, picks `quality` and `size` per §1.1, and calls the OpenAI Images API directly via inline Python.
+The slash command body inlines the OpenAI Cookbook *GPT Image Generation Models Prompting Guide* via an `@` include. Claude Code resolves the include at invocation time, so the full guide lands in the model's context every time. Claude then refines the user's request to follow the guide's structure, picks `quality` and `size` per §1.1, and shells out to your local `codex exec` to run Codex's built-in `image_gen` tool against `gpt-image-2` — authenticated through your Codex session.
 
 The prompting guide lives at `references/openai-cookbook-prompting-guide.md` (mirrored from the [OpenAI Cookbook](https://github.com/openai/openai-cookbook/blob/main/examples/multimodal/image-gen-models-prompting-guide.ipynb)).
