@@ -1,0 +1,21 @@
+{
+  "name": "fciaf420-codex",
+  "owner": {
+    "name": "fciaf420"
+  },
+  "metadata": {
+    "description": "Codex extras for Claude Code: image generation backed by gpt-image-2 with the OpenAI Cookbook prompting guide enforced.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "codex-image-gen",
+      "description": "Generate or edit images via Codex's image gen 2.0 (gpt-image-2) using the OpenAI Cookbook prompting guide.",
+      "version": "0.1.0",
+      "author": {
+        "name": "fciaf420"
+      },
+      "source": "./plugins/codex-image-gen"
+    }
+  ]
+}
