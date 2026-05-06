@@ -1,0 +1,8 @@
+{
+  "name": "codex-image-gen",
+  "version": "0.1.0",
+  "description": "Generate or edit images via Codex's image gen 2.0 (gpt-image-2) using the OpenAI Cookbook prompting guide.",
+  "author": {
+    "name": "fciaf420"
+  }
+}
