@@ -46,14 +46,15 @@ Substitute `<REFINED_PROMPT>`, `<QUALITY>`, `<SIZE>`, `<OUT_PATH>`, and `<N>` (n
 
 ```bash
 mkdir -p "$(dirname '<OUT_PATH>')"
-codex exec --sandbox workspace-write --skip-git-repo-check "$(cat <<'EOF'
+codex exec --sandbox workspace-write --skip-git-repo-check - <<'EOF'
 Use your built-in image_gen tool to generate <N> image(s) for the prompt below. Use model gpt-image-2 with quality=<QUALITY> and size=<SIZE>. After generation, copy the selected output(s) from the default $CODEX_HOME/generated_images/... save location to <OUT_PATH> (for n=1) or to sibling versioned filenames based on <OUT_PATH> (for n>1). When done, print one absolute saved path per line and nothing else.
 
 Prompt:
 <REFINED_PROMPT>
 EOF
-)"
 ```
+
+> **Cross-platform note:** the prompt is passed via stdin (`- <<'EOF'`) rather than as a positional argument. On Windows (Git Bash / Cygwin) the Bash tool's stdin handle isn't a closed TTY, so `codex exec "<prompt>"` triggers codex's "stdin is piped, append to prompt" branch and hangs forever waiting for EOF. Heredoc-on-stdin gives a real EOF on every platform.
 
 ## Edit (text + image → image) via `codex exec`
 
@@ -61,13 +62,12 @@ Substitute `<REFINED_PROMPT_WITH_INVARIANTS>`, `<EDIT_INPUT_PATH>`, `<QUALITY>`,
 
 ```bash
 mkdir -p "$(dirname '<OUT_PATH>')"
-codex exec --sandbox workspace-write --skip-git-repo-check "$(cat <<'EOF'
+codex exec --sandbox workspace-write --skip-git-repo-check - <<'EOF'
 Edit the image at <EDIT_INPUT_PATH> using your built-in image_gen tool's edit mode. Load it into context first with view_image if needed. Use model gpt-image-2 with quality=<QUALITY> and size=<SIZE>. After generation, copy the selected output from the default $CODEX_HOME/generated_images/... save location to <OUT_PATH>. When done, print the absolute saved path and nothing else.
 
 Edit instruction (state invariants explicitly):
 <REFINED_PROMPT_WITH_INVARIANTS>
 EOF
-)"
 ```
 
 ## Constraints on this command
