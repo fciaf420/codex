@@ -58,6 +58,8 @@ const USER_AGENT_HEADER: &str = "user-agent";
 const WS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const X_CLIENT_REQUEST_ID_HEADER: &str = "x-client-request-id";
 const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
+const X_CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY: &str =
+    "x-codex-ws-stream-request-start-ms";
 
 fn assert_request_trace_matches(body: &serde_json::Value, expected_trace: &W3cTraceContext) {
     let client_metadata = body["client_metadata"]
@@ -145,6 +147,13 @@ async fn responses_websocket_streams_request() {
         body["client_metadata"]["x-codex-installation-id"].as_str(),
         Some(TEST_INSTALLATION_ID)
     );
+    let stream_request_start_ms = body["client_metadata"]
+        [X_CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY]
+        .as_str()
+        .expect("missing websocket stream request start timestamp")
+        .parse::<i64>()
+        .expect("websocket stream request start timestamp should be an integer");
+    assert!(stream_request_start_ms > 0);
 
     server.shutdown().await;
 }
@@ -167,6 +176,168 @@ async fn responses_websocket_streams_without_feature_flag_when_provider_supports
 
     assert_eq!(server.handshakes().len(), 1);
     assert_eq!(server.single_connection().len(), 1);
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_sends_response_processed_when_feature_enabled() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![vec![
+        vec![
+            ev_response_created("resp-prewarm"),
+            ev_completed("resp-prewarm"),
+        ],
+        vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "hi"),
+            ev_completed("resp-1"),
+        ],
+        vec![],
+    ]])
+    .await;
+
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::ResponsesWebsocketResponseProcessed)
+            .expect("test config should allow feature update");
+    });
+    let test = builder
+        .build_with_websocket_server(&server)
+        .await
+        .expect("build websocket codex");
+
+    test.submit_turn("hello")
+        .await
+        .expect("submission should send response.processed after processing");
+
+    let processed = server
+        .wait_for_request(/*connection_index*/ 0, /*request_index*/ 2)
+        .await;
+    assert_eq!(
+        processed.body_json(),
+        json!({
+            "type": "response.processed",
+            "response_id": "resp-1",
+        })
+    );
+
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 3);
+    assert_eq!(
+        connection[1].body_json()["type"].as_str(),
+        Some("response.create")
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_sends_response_processed_after_remote_compaction_v2() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![vec![
+        vec![
+            ev_response_created("resp-prewarm"),
+            ev_completed("resp-prewarm"),
+        ],
+        vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "hi"),
+            ev_completed("resp-1"),
+        ],
+        vec![],
+        vec![
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "context_compaction",
+                    "encrypted_content": "ENCRYPTED_CONTEXT_COMPACTION_SUMMARY",
+                }
+            }),
+            ev_completed("resp-compact"),
+        ],
+        vec![],
+    ]])
+    .await;
+
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::RemoteCompactionV2)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::ResponsesWebsocketResponseProcessed)
+            .expect("test config should allow feature update");
+    });
+    let test = builder
+        .build_with_websocket_server(&server)
+        .await
+        .expect("build websocket codex");
+
+    test.submit_turn("hello")
+        .await
+        .expect("submission should send response.processed after processing");
+
+    test.codex
+        .submit(Op::Compact)
+        .await
+        .expect("compact submission should succeed");
+    wait_for_event(&test.codex, |msg| matches!(msg, EventMsg::TurnComplete(_))).await;
+
+    let compact_processed = server
+        .wait_for_request(/*connection_index*/ 0, /*request_index*/ 4)
+        .await;
+    assert_eq!(
+        compact_processed.body_json(),
+        json!({
+            "type": "response.processed",
+            "response_id": "resp-compact",
+        })
+    );
+
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 5);
+    assert_eq!(
+        connection[3].body_json()["type"].as_str(),
+        Some("response.create")
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_omits_response_processed_without_feature() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![vec![
+        vec![
+            ev_response_created("resp-prewarm"),
+            ev_completed("resp-prewarm"),
+        ],
+        vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "hi"),
+            ev_completed("resp-1"),
+        ],
+        vec![],
+    ]])
+    .await;
+    let mut builder = test_codex();
+    let test = builder
+        .build_with_websocket_server(&server)
+        .await
+        .expect("build websocket codex");
+
+    test.submit_turn("hello")
+        .await
+        .expect("submission should complete without response.processed");
+
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 2);
 
     server.shutdown().await;
 }
@@ -1873,6 +2044,7 @@ async fn websocket_harness_with_provider_options(
         /*enable_request_compression*/ false,
         runtime_metrics_enabled,
         /*beta_features_header*/ None,
+        /*attestation_provider*/ None,
     );
 
     WebsocketTestHarness {
@@ -1948,7 +2120,7 @@ async fn stream_until_complete_with_request_metadata(
             &harness.session_telemetry,
             harness.effort,
             harness.summary,
-            service_tier,
+            service_tier.map(|service_tier| service_tier.request_value().to_string()),
             turn_metadata_header,
             &codex_rollout_trace::InferenceTraceContext::disabled(),
         )
