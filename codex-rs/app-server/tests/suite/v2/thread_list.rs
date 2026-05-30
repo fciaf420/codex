@@ -227,6 +227,7 @@ async fn thread_list_reports_system_error_idle_flag_after_failed_turn() -> Resul
     let seed_turn_id = mcp
         .send_turn_start_request(TurnStartParams {
             thread_id: thread.id.clone(),
+            client_user_message_id: None,
             input: vec![UserInput::Text {
                 text: "seed history".to_string(),
                 text_elements: Vec::new(),
@@ -249,6 +250,7 @@ async fn thread_list_reports_system_error_idle_flag_after_failed_turn() -> Resul
     let failed_turn_id = mcp
         .send_turn_start_request(TurnStartParams {
             thread_id: thread.id.clone(),
+            client_user_message_id: None,
             input: vec![UserInput::Text {
                 text: "fail turn".to_string(),
                 text_elements: Vec::new(),
@@ -686,7 +688,7 @@ async fn thread_search_returns_content_matches() -> Result<()> {
         codex_home.path(),
         "2025-01-02T12-00-00",
         "2025-01-02T12:00:00Z",
-        "needle suffix",
+        "mixed NEEDLE suffix",
         Some("mock_provider"),
         /*git_info*/ None,
     )?;
@@ -718,7 +720,7 @@ async fn thread_search_returns_content_matches() -> Result<()> {
         .map(|result| result.thread.id.as_str())
         .collect();
     assert_eq!(ids, vec![newer_match, older_match]);
-    assert_eq!(data[0].snippet, "needle suffix");
+    assert_eq!(data[0].snippet, "mixed NEEDLE suffix");
 
     Ok(())
 }
